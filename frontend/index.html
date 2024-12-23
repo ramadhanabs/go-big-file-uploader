@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uploader</title>
+</head>
+<body>
+    <input type="file" id="input" accept="image/*,.pdf" >
+    <button id="upload-button">Upload!</button>
+
+    <div id="file-size">File size: 0</div>
+    <div id="chunk-count">Chunk count: 0</div>
+    <div id="file-uploaded-count">File uploaded count: 0</div>
+</body>
+<script type="text/javascript">
+    function generateUUID() { // Public Domain/MIT
+        var d = new Date().getTime();//Timestamp
+        var d2 = ((typeof performance !== 'undefined') && performance.now && (performance.now()*1000)) || 0;//Time in microseconds since page-load or 0 if unsupported
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16;//random number between 0 and 16
+            if(d > 0){//Use timestamp until depleted
+                r = (d + r)%16 | 0;
+                d = Math.floor(d/16);
+            } else {//Use microseconds since page-load if supported
+                r = (d2 + r)%16 | 0;
+                d2 = Math.floor(d2/16);
+            }
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    }
+</script>
+<script type="text/javascript">
+    const chunkSize = 512 * 1000;
+    let selectedFile = null;
+    const inputElement = document.getElementById("input");
+    inputElement.addEventListener("change", handleFiles, false);
+
+    const buttonElement = document.getElementById("upload-button");
+    buttonElement.addEventListener("click", handleClickUpload)
+
+    function handleFiles() {
+        const fileList = this.files;
+        selectedFile = fileList[0];
+
+        const fileSize = selectedFile.size;
+        const fullChunks = Math.floor(fileSize / chunkSize);
+        const remainedChunk = fileSize % chunkSize;
+
+        const fileSizeElement = document.getElementById("file-size");
+        fileSizeElement.innerHTML = `File size: ${fileSize}`
+
+        const chunkCountElement = document.getElementById("chunk-count");
+        fileSizeElement.innerHTML = `Chunk count: ${fullChunks}`
+    }   
+
+    async function handleClickUpload(){
+        const uploadURL = "http://localhost:8080/upload";
+        const uploadChunkURL = "http://localhost:8080/chunk-upload";
+        
+        try {
+            // get file size
+            // get chunk size
+            const fileId = generateUUID();
+            const fileSize = selectedFile.size;
+            const fileName = selectedFile.name;
+            const fullChunks = Math.floor(fileSize / chunkSize);
+            const remainedChunk = fileSize % chunkSize;
+            let uploadCount = 0;
+
+            if (fullChunks > 0){
+                for (let i = 0; i < fullChunks; i++){
+                    const data = new FormData();
+                    const offset = chunkSize * i;
+                    const limit = chunkSize * (i + 1);
+                    const metadata = {
+                        order: i,
+                        fileId,
+                        offset,
+                        limit,
+                        fileSize,
+                        fileName
+                    }
+    
+                    const chunkedFile = selectedFile.slice(offset, limit);
+    
+                    data.append('file', chunkedFile);
+                    data.append('metadata', JSON.stringify(metadata))
+                    
+                    const response = await fetch(uploadChunkURL, {
+                        method: "POST",
+                        body: data
+                    });
+        
+                    if (!response.ok) {
+                        throw new Error(`Response status: ${response.status}`);
+                    }
+        
+                    const json = await response.json();
+                    const fileUploadedCount = document.getElementById("file-uploaded-count");
+                    uploadCount++;
+                    fileUploadedCount.innerHTML = `File uploaded count: ${uploadCount}`
+                    console.log(json);
+                }
+
+                if (remainedChunk > 0){
+                    const data = new FormData();
+                    console.log("pushing last item")
+
+                    const offset = fileSize - remainedChunk;
+                    const limit = fileSize;
+                    const metadata = {
+                        order: fullChunks,
+                        fileId,
+                        offset,
+                        limit,
+                        fileSize,
+                        fileName
+                    }
+
+                    const chunkedFile = selectedFile.slice(offset, limit);
+                    console.log("🚀 ~ handleClickUpload ~ chunkedFile:", chunkedFile)
+
+                    data.append('file', chunkedFile)
+                    data.append('metadata', JSON.stringify(metadata))
+
+                    const response = await fetch(uploadChunkURL, {
+                        method: "POST",
+                        body: data
+                    });
+        
+                    if (!response.ok) {
+                        throw new Error(`Response status: ${response.status}`);
+                    }
+        
+                    const json = await response.json();
+                    console.log(json);
+                }
+            } else {
+                // direct upload
+                const data = new FormData();
+                data.append('file', selectedFile);
+    
+                const response = await fetch(uploadURL, {
+                    method: "POST",
+                    body: data
+                });
+    
+                if (!response.ok) {
+                    throw new Error(`Response status: ${response.status}`);
+                }
+    
+                const json = await response.json();
+                console.log(json);
+            }
+        } catch(error){
+            console.log("🚀 ~ handleClickUpload ~ error:", error)
+        }
+    }
+</script>
+</html>
