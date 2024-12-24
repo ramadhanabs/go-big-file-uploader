@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -48,6 +49,8 @@ func main() {
 	})
 
 	r.POST("/chunk-upload", func(c *gin.Context) {
+		time.Sleep(2 * time.Second) // delay 2s
+
 		file, err := c.FormFile("file")
 		if err != nil {
 			c.String(http.StatusBadRequest, "Get File Error err: %s", err.Error())

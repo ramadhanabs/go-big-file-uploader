@@ -5,14 +5,36 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Uploader</title>
+
+    <link rel="stylesheet" href="main.css">
 </head>
 <body>
-    <input type="file" id="input" accept="image/*,.pdf" >
-    <button id="upload-button">Upload!</button>
+    <div class="container">
+        <div class="content-box">
+            <div class="input-box">
+                <input type="file" id="input" accept="image/*,.pdf" >
+                <button id="upload-button">Upload!</button>
+            </div>
 
-    <div id="file-size">File size: 0</div>
-    <div id="chunk-count">Chunk count: 0</div>
-    <div id="file-uploaded-count">File uploaded count: 0</div>
+            <div class="progress-box">
+                <div class="progress-bar-container">
+                    <div id="progress-bar" style="width: 0%"></div>
+                </div>
+                <div id="percentage">0%</div>
+            </div>
+        
+            <div class="counter-container">
+                <div id="file-size">File size: 0</div>
+                <div id="chunk-count">Chunk count: 0</div>
+                <div id="file-uploaded-count">File uploaded count: 0</div>
+            </div>
+
+            <div class="resume-pause-container">
+                <button id="resume-button" disabled>Resume</button>
+                <button id="pause-button" disabled>Pause</button>
+            </div>
+        </div>
+    </div>
 </body>
 <script type="text/javascript">
     function generateUUID() { // Public Domain/MIT
@@ -32,13 +54,31 @@
     }
 </script>
 <script type="text/javascript">
+    // contoller
+    let controller, signal;
+
+    // file state
     const chunkSize = 512 * 1000;
     let selectedFile = null;
+    let fileSize, fileName, fullChunks, remainedChunk;
+    let uploadCount = 0;
+    let isUploading = false;
+
+    // event listener
+    const progressBarElement = document.getElementById("progress-bar");
+    const percentageElement = document.getElementById("percentage");
+
     const inputElement = document.getElementById("input");
     inputElement.addEventListener("change", handleFiles, false);
 
     const buttonElement = document.getElementById("upload-button");
     buttonElement.addEventListener("click", handleClickUpload)
+
+    const resumeButtonElement = document.getElementById("resume-button");
+    resumeButtonElement.addEventListener("click", handleClickUpload);
+
+    const pauseButtonElement = document.getElementById("pause-button");
+    pauseButtonElement.addEventListener("click", handleClickPause)
 
     function handleFiles() {
         const fileList = this.files;
@@ -56,26 +96,39 @@
     }   
 
     async function handleClickUpload(){
+        controller = new AbortController();
+        signal = controller.signal;
+
         const uploadURL = "http://localhost:8080/upload";
         const uploadChunkURL = "http://localhost:8080/chunk-upload";
         
         try {
-            // get file size
-            // get chunk size
-            const fileId = generateUUID();
-            const fileSize = selectedFile.size;
-            const fileName = selectedFile.name;
-            const fullChunks = Math.floor(fileSize / chunkSize);
-            const remainedChunk = fileSize % chunkSize;
-            let uploadCount = 0;
+            isUploading = true;
+            resumeButtonElement.setAttribute("disabled", true);
+            pauseButtonElement.removeAttribute("disabled");
+
+            let fileId = ""
+
+            if (localStorage.getItem("FILE_ID")){
+                fileId = localStorage.getItem("FILE_ID")
+            } else {
+                fileId = generateUUID();
+            }
+
+            fileSize = selectedFile.size;
+            fileName = selectedFile.name;
+            fullChunks = Math.floor(fileSize / chunkSize);
+            remainedChunk = fileSize % chunkSize;
+
+            localStorage.setItem("FILE_ID", fileId)
 
             if (fullChunks > 0){
-                for (let i = 0; i < fullChunks; i++){
+               while(uploadCount < fullChunks && isUploading){
                     const data = new FormData();
-                    const offset = chunkSize * i;
-                    const limit = chunkSize * (i + 1);
+                    const offset = chunkSize * uploadCount;
+                    const limit = chunkSize * (uploadCount + 1);
                     const metadata = {
-                        order: i,
+                        order: uploadCount,
                         fileId,
                         offset,
                         limit,
@@ -90,7 +143,8 @@
                     
                     const response = await fetch(uploadChunkURL, {
                         method: "POST",
-                        body: data
+                        body: data,
+                        signal
                     });
         
                     if (!response.ok) {
@@ -99,12 +153,18 @@
         
                     const json = await response.json();
                     const fileUploadedCount = document.getElementById("file-uploaded-count");
+                    
                     uploadCount++;
                     fileUploadedCount.innerHTML = `File uploaded count: ${uploadCount}`
+
+                    const percentage = uploadCount/fullChunks * 100
+                    progressBarElement.style.width = `${percentage}%`
+                    percentageElement.innerHTML = `${Math.floor(percentage)}%`
+
                     console.log(json);
                 }
 
-                if (remainedChunk > 0){
+                if (remainedChunk > 0 && isUploading){
                     const data = new FormData();
                     console.log("pushing last item")
 
@@ -157,6 +217,13 @@
         } catch(error){
             console.log("🚀 ~ handleClickUpload ~ error:", error)
         }
+    }
+
+    function handleClickPause(){
+        isUploading = false;
+        pauseButtonElement.setAttribute("disabled", true);
+        resumeButtonElement.removeAttribute("disabled");
+        controller.abort();
     }
 </script>
 </html>
