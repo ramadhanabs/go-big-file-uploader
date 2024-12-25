@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -8,30 +9,40 @@
 
     <link rel="stylesheet" href="main.css">
 </head>
+
 <body>
     <div class="container">
-        <div class="content-box">
-            <div class="input-box">
-                <input type="file" id="input" accept="image/*,.pdf" >
-                <button id="upload-button">Upload!</button>
-            </div>
+        <div class="wrapper">
+            <div class="image-preview">
+                <p id="empty-state">No image found</p>
 
-            <div class="progress-box">
-                <div class="progress-bar-container">
-                    <div id="progress-bar" style="width: 0%"></div>
+                <div class="image-grid">
                 </div>
-                <div id="percentage">0%</div>
-            </div>
-        
-            <div class="counter-container">
-                <div id="file-size">File size: 0</div>
-                <div id="chunk-count">Chunk count: 0</div>
-                <div id="file-uploaded-count">File uploaded count: 0</div>
             </div>
 
-            <div class="resume-pause-container">
-                <button id="resume-button" disabled>Resume</button>
-                <button id="pause-button" disabled>Pause</button>
+            <div class="content-box">
+                <div class="input-box">
+                    <input type="file" id="input" accept="image/*,.pdf">
+                    <button id="upload-button">Upload!</button>
+                </div>
+
+                <div class="progress-box">
+                    <div class="progress-bar-container">
+                        <div id="progress-bar" style="width: 0%"></div>
+                    </div>
+                    <div id="percentage">0%</div>
+                </div>
+
+                <div class="counter-container">
+                    <div id="file-size">File size: 0</div>
+                    <div id="chunk-count">Chunk count: 0</div>
+                    <div id="file-uploaded-count">File uploaded count: 0</div>
+                </div>
+
+                <div class="resume-pause-container">
+                    <button id="resume-button" disabled>Resume</button>
+                    <button id="pause-button" disabled>Pause</button>
+                </div>
             </div>
         </div>
     </div>
@@ -39,19 +50,103 @@
 <script type="text/javascript">
     function generateUUID() { // Public Domain/MIT
         var d = new Date().getTime();//Timestamp
-        var d2 = ((typeof performance !== 'undefined') && performance.now && (performance.now()*1000)) || 0;//Time in microseconds since page-load or 0 if unsupported
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var d2 = ((typeof performance !== 'undefined') && performance.now && (performance.now() * 1000)) || 0;//Time in microseconds since page-load or 0 if unsupported
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
             var r = Math.random() * 16;//random number between 0 and 16
-            if(d > 0){//Use timestamp until depleted
-                r = (d + r)%16 | 0;
-                d = Math.floor(d/16);
+            if (d > 0) {//Use timestamp until depleted
+                r = (d + r) % 16 | 0;
+                d = Math.floor(d / 16);
             } else {//Use microseconds since page-load if supported
-                r = (d2 + r)%16 | 0;
-                d2 = Math.floor(d2/16);
+                r = (d2 + r) % 16 | 0;
+                d2 = Math.floor(d2 / 16);
             }
             return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
         });
     }
+
+    async function generateChecksum(chunk) {
+        const buffer = await chunk.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    }
+</script>
+<script type="text/javascript">
+    let userId = ""
+
+    if (localStorage.getItem("USER_ID")) {
+        userId = localStorage.getItem("USER_ID")
+    } else {
+        userId = generateUUID();
+        localStorage.setItem("USER_ID", userId)
+    }
+
+    async function deleteImage(id){
+        try {
+            const data = new FormData();
+            data.append("user_id", localStorage.getItem("USER_ID"))
+            data.append("id", id)
+
+            const response = await fetch(`http://localhost:8080/delete-image`, {
+                method: "POST",
+                body: data
+            })
+
+            if (response.status === 200){
+                alert("Success delete!");
+                window.location.reload();
+            }
+        } catch(err){
+            console.log("🚀 ~ deleteImage ~ err:", err)
+        }
+    }
+    async function fetchImages() {
+        try {
+            const response = await fetch(`http://localhost:8080/images?user_id=${userId}`)
+
+            if (response.status === 200) {
+                const json = await response.json();
+                if (json.data){
+                        document.getElementById("empty-state").style.display = "none"
+                        const imageGrid = document.querySelector('.image-grid');
+
+                        json.data.forEach((item) => {
+                            const imageCard = document.createElement('div');
+                            imageCard.classList.add('image-card-preview');
+
+                            const img = document.createElement('img');
+                            img.src = "http://localhost:8080/"+item.path;
+                            img.alt = item.user_id;
+
+                            const urlDiv = document.createElement('div');
+                            urlDiv.classList.add('url');
+                            urlDiv.textContent = "http://localhost:8080/"+item.path;
+
+                            const deleteButton = document.createElement('button');
+                            deleteButton.classList.add('delete-button')
+                            deleteButton.setAttribute("id", item.id);
+                            deleteButton.textContent = "Delete";
+                            deleteButton.addEventListener("click", async function () {
+                                const elementId = deleteButton.id; // Get the ID of the clicked button
+                                
+                                await deleteImage(elementId)
+                            });
+
+                            imageCard.appendChild(img);
+                            imageCard.appendChild(urlDiv);
+                            imageCard.appendChild(deleteButton);
+
+                            imageGrid.appendChild(imageCard);
+                        });
+                    }
+            }
+        } catch (error) {
+            console.log("🚀 ~ fetchImages ~ error:", error)
+        }
+    }
+
+    fetchImages();
 </script>
 <script type="text/javascript">
     // contoller
@@ -92,24 +187,25 @@
         fileSizeElement.innerHTML = `File size: ${fileSize}`
 
         const chunkCountElement = document.getElementById("chunk-count");
-        fileSizeElement.innerHTML = `Chunk count: ${fullChunks}`
-    }   
+        chunkCountElement.innerHTML = `Chunk count: ${fullChunks}`
+    }
 
-    async function handleClickUpload(){
+    async function handleClickUpload() {
         controller = new AbortController();
         signal = controller.signal;
 
         const uploadURL = "http://localhost:8080/upload";
         const uploadChunkURL = "http://localhost:8080/chunk-upload";
-        
+
         try {
+            let retryCount = 3;
             isUploading = true;
             resumeButtonElement.setAttribute("disabled", true);
             pauseButtonElement.removeAttribute("disabled");
 
             let fileId = ""
 
-            if (localStorage.getItem("FILE_ID")){
+            if (localStorage.getItem("FILE_ID")) {
                 fileId = localStorage.getItem("FILE_ID")
             } else {
                 fileId = generateUUID();
@@ -122,104 +218,127 @@
 
             localStorage.setItem("FILE_ID", fileId)
 
-            if (fullChunks > 0){
-               while(uploadCount < fullChunks && isUploading){
+            if (fullChunks > 0) {
+                while (uploadCount < fullChunks && isUploading && retryCount > 0) {
                     const data = new FormData();
                     const offset = chunkSize * uploadCount;
                     const limit = chunkSize * (uploadCount + 1);
+
+                    const chunkedFile = selectedFile.slice(offset, limit);
+                    const checkSum = await generateChecksum(chunkedFile)
                     const metadata = {
                         order: uploadCount,
                         fileId,
                         offset,
                         limit,
                         fileSize,
-                        fileName
+                        fileName,
+                        checkSum
                     }
-    
-                    const chunkedFile = selectedFile.slice(offset, limit);
-    
+
                     data.append('file', chunkedFile);
                     data.append('metadata', JSON.stringify(metadata))
-                    
+                    data.append('user_id', localStorage.getItem("USER_ID"))
+
                     const response = await fetch(uploadChunkURL, {
                         method: "POST",
                         body: data,
                         signal
                     });
-        
-                    if (!response.ok) {
-                        throw new Error(`Response status: ${response.status}`);
+
+                    if (response.status === 200) {
+                        const json = await response.json();
+                        const fileUploadedCount = document.getElementById("file-uploaded-count");
+
+                        uploadCount++;
+                        fileUploadedCount.innerHTML = `File uploaded count: ${uploadCount}`
+
+                        const percentage = uploadCount / fullChunks * 100
+                        progressBarElement.style.width = `${percentage}%`
+                        percentageElement.innerHTML = `${Math.floor(percentage)}%`
+
+                        console.log(json);
+                    } else if (response.status === 422) {
+                        retryCount--;
                     }
-        
-                    const json = await response.json();
-                    const fileUploadedCount = document.getElementById("file-uploaded-count");
-                    
-                    uploadCount++;
-                    fileUploadedCount.innerHTML = `File uploaded count: ${uploadCount}`
-
-                    const percentage = uploadCount/fullChunks * 100
-                    progressBarElement.style.width = `${percentage}%`
-                    percentageElement.innerHTML = `${Math.floor(percentage)}%`
-
-                    console.log(json);
                 }
 
-                if (remainedChunk > 0 && isUploading){
+                retryCount = 3;
+
+                if (remainedChunk > 0 && isUploading) {
                     const data = new FormData();
-                    console.log("pushing last item")
 
                     const offset = fileSize - remainedChunk;
                     const limit = fileSize;
+
+                    const chunkedFile = selectedFile.slice(offset, limit);
+                    const checkSum = await generateChecksum(chunkedFile)
                     const metadata = {
                         order: fullChunks,
                         fileId,
                         offset,
                         limit,
                         fileSize,
-                        fileName
+                        fileName,
+                        checkSum
                     }
-
-                    const chunkedFile = selectedFile.slice(offset, limit);
-                    console.log("🚀 ~ handleClickUpload ~ chunkedFile:", chunkedFile)
 
                     data.append('file', chunkedFile)
                     data.append('metadata', JSON.stringify(metadata))
+                    data.append('user_id', localStorage.getItem("USER_ID"))
 
                     const response = await fetch(uploadChunkURL, {
                         method: "POST",
                         body: data
                     });
-        
-                    if (!response.ok) {
-                        throw new Error(`Response status: ${response.status}`);
+
+                    if (response.status === 200) {
+                        const json = await response.json();
+                        alert("Success upload!");
+                        window.location.reload();
+                    } else if (response.status === 422) {
+                        while (retry > 0) {
+                            const retryResponse = await fetch(uploadChunkURL, {
+                                method: "POST",
+                                body: data
+                            });
+
+                            if (retryResponse.status === 200) {
+                                const json = await retryResponse.json();
+                                console.log(json);
+                                break;
+                            } else if (retryResponse.status === 422) {
+                                retryCount--;
+                            }
+                        }
                     }
-        
-                    const json = await response.json();
-                    console.log(json);
                 }
             } else {
                 // direct upload
                 const data = new FormData();
                 data.append('file', selectedFile);
-    
+                data.append('user_id', localStorage.getItem("USER_ID"))
+
                 const response = await fetch(uploadURL, {
                     method: "POST",
-                    body: data
+                    body: data,
                 });
-    
+
                 if (!response.ok) {
                     throw new Error(`Response status: ${response.status}`);
                 }
-    
+
                 const json = await response.json();
-                console.log(json);
+                
+                alert("Success upload!");
+                window.location.reload();
             }
-        } catch(error){
+        } catch (error) {
             console.log("🚀 ~ handleClickUpload ~ error:", error)
         }
     }
 
-    function handleClickPause(){
+    function handleClickPause() {
         isUploading = false;
         pauseButtonElement.setAttribute("disabled", true);
         resumeButtonElement.removeAttribute("disabled");
