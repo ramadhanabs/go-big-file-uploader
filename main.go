@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -31,6 +32,7 @@ type Metadata struct {
 func main() {
 	r := gin.Default()
 	r.Static("/uploads", "./uploads")
+	r.Static("/downloads", "./downloads")
 
 	r.Use(cors.Default())
 	r.MaxMultipartMemory = 8 << 20 // 8 MiB
@@ -199,5 +201,77 @@ func main() {
 		})
 	})
 
+	r.GET("/download", func(c *gin.Context) {
+		filePath := c.Query("path")
+		// time.Sleep((3 / 10) * time.Second) // delay 2s
+
+		file, err := os.Open("." + filePath)
+		if err != nil {
+			c.String(http.StatusBadRequest, "Get File Error err: %s", err.Error())
+			return
+		}
+		defer file.Close()
+
+		fileInfo, err := file.Stat()
+		if err != nil {
+			c.String(http.StatusBadRequest, "Get File Stat Error err: %s", err.Error())
+			return
+		}
+		fileSize := fileInfo.Size()
+		fmt.Printf("Filesize: %d", fileSize)
+
+		rangeHeader := c.Request.Header.Get("Range")
+		if rangeHeader == "" {
+			c.String(http.StatusBadRequest, "Required range on header")
+			return
+		}
+
+		// parse range header i.e: bytes=1000-9999
+		rangeParts := strings.Split(rangeHeader, "=")
+		if len(rangeParts) != 2 {
+			c.String(http.StatusBadRequest, "Invalid range on header")
+			return
+		}
+
+		// get range value
+		rangeValues := strings.Split(rangeParts[1], "-")
+		if len(rangeValues) != 2 {
+			c.String(http.StatusBadRequest, "Invalid range values")
+			return
+		}
+
+		startByte, err := strconv.ParseInt(rangeValues[0], 10, 64)
+		if err != nil {
+			c.String(http.StatusBadRequest, "Invalid start byte range")
+			return
+		}
+
+		var endByte int64
+		if rangeValues[1] == "" {
+			// If the end byte is not specified, set it to the end of the file
+			endByte = fileSize - 1
+		} else {
+			endByte, err = strconv.ParseInt(rangeValues[1], 10, 64)
+			if err != nil {
+				c.String(http.StatusBadRequest, "Invalid end byte range")
+				return
+			}
+		}
+
+		if startByte > endByte || startByte >= fileSize {
+			c.String(http.StatusBadRequest, "Invalid byte range")
+			return
+		}
+
+		c.Header("Content-Type", "application/octet-stream")
+		c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", startByte, endByte, fileSize))
+		c.Header("Content-Length", strconv.FormatInt(endByte-startByte+1, 10))
+		c.Status(http.StatusPartialContent) // Set the 206 status code
+
+		_, err = io.CopyN(c.Writer, file, int64(endByte-startByte+1))
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Internal server error")
+		}
+	})
 	r.Run()
 }

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Downloader</title>
+
+    <link rel="stylesheet" href="main.css">
+</head>
+<body>
+    <div class="container">
+        <div class="wrapper">
+            <div class="content-box">
+                <div>Download big file</div>
+
+                  <div class="progress-box">
+                    <div class="progress-bar-container">
+                        <div id="progress-bar" style="width: 0%"></div>
+                    </div>
+                    <div id="percentage">0%</div>
+                </div>
+
+                <button id="download-button" style="width: 100%;">Download</button>
+            </div>
+        </div>
+    </div>
+</body>
+<script type="text/javascript">
+    let fileSize = 1047095870; // Example file size (1GB)
+    let downloaded = 0; // Start with 0 bytes downloaded
+    let chunkSize = 1024 * 1024; // 1MB chunks
+    let totalChunks = Math.floor(fileSize / chunkSize);
+
+    const progressBarElement = document.getElementById("progress-bar");
+    const percentageElement = document.getElementById("percentage");
+
+    const downloadButtonElement = document.getElementById("download-button");
+    downloadButtonElement.addEventListener("click", handleClickDownload)
+
+    async function createFileWriter() {
+        const fileHandle = await window.showSaveFilePicker(); // Request a file handle
+        const writableStream = await fileHandle.createWritable(); // Create a writable stream
+        return writableStream;
+    }
+
+    async function handleClickDownload(){
+        let chunks = []; // to store chunked file blob
+
+        for (let i = downloaded; i < totalChunks; i++){
+            const response = await fetch("http://localhost:8080/download?path=/downloads/file.zip", {
+                method: "GET",
+                headers: {
+                    "Range": `bytes=${downloaded}-${downloaded + chunkSize - 1}`
+                }
+            })
+    
+            if (response.status === 206){
+                downloaded += chunkSize;
+
+                const chunk = await response.blob();
+                chunks.push(chunk);
+
+                const percentage = i / totalChunks * 100
+                progressBarElement.style.width = `${percentage}%`
+                percentageElement.innerHTML = `${Math.floor(percentage)}%`
+            } else {
+                console.error("Error downloading file");
+            }
+        }
+
+        const completeFile = new Blob(chunks);
+        const downloadUrlFinal = URL.createObjectURL(completeFile);
+        const a = document.createElement('a');
+        a.href = downloadUrlFinal;
+        a.download = "file.zip";
+        a.click();
+        URL.revokeObjectURL(downloadUrlFinal);
+    }
+</script>
+</html>
